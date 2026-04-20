@@ -600,16 +600,6 @@ async function fetchCSV(filename) {
     });
   });
 }
-  return new Promise((resolve, reject) => {
-    Papa.parse(text, {
-      header: true,
-      skipEmptyLines: true,
-      dynamicTyping: true,
-      complete: r => resolve(r.data),
-      error: e => reject(e)
-    });
-  });
-}
 
 // Read a File object as text
 function readFile(file) {
