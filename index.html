@@ -551,26 +551,23 @@ tr:hover td{background:var(--blue-light)}
 
 </div><!-- /body -->
 
-<!-- LOADING OVERLAY -->
 <div id="data-loader" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(255,255,255,0.92);z-index:9999;flex-direction:column;align-items:center;justify-content:center;">
-  <div style="font-size:1.2rem;color:#005AC1;font-weight:600;margin-bottom:1rem;" id="loader-msg">Loading data from SharePoint...</div>
+  <div style="font-size:1.2rem;color:#005AC1;font-weight:600;margin-bottom:1rem;" id="loader-msg">Loading data...</div>
   <div style="width:320px;height:8px;background:#e0e8f5;border-radius:4px;overflow:hidden;">
     <div id="loader-bar" style="width:0%;height:100%;background:#005AC1;border-radius:4px;transition:width 0.4s;"></div>
   </div>
-  <div style="margin-top:0.75rem;font-size:0.85rem;color:#666;" id="loader-detail">Connecting to SharePoint...</div>
+  <div style="margin-top:0.75rem;font-size:0.85rem;color:#666;" id="loader-detail">Fetching CSV files...</div>
 </div>
 
 <script>
 const API_KEY = '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';
 
 // ── GITHUB DATA SOURCE ────────────────────────────────────────────────────────
-// CSVs are stored in the GitHub repository and fetched automatically
 const BASE_URL = 'https://raw.githubusercontent.com/bai-analytics/bai-analytics/main';
 
-// Loader helpers
 function showLoader(msg, detail='') {
   const el = document.getElementById('data-loader');
-  if(el){ el.style.display='flex'; }
+  if(el) el.style.display='flex';
   if(msg) document.getElementById('loader-msg').textContent = msg;
   if(detail) document.getElementById('loader-detail').textContent = detail;
 }
@@ -584,377 +581,153 @@ function hideLoader() {
   if(el) el.style.display='none';
 }
 
-// Fetch and parse a CSV file from GitHub
 async function fetchCSV(filename) {
-  const url = `${BASE_URL}/${filename}`;
-  const resp = await fetch(url);
-  if (!resp.ok) throw new Error(`HTTP ${resp.status} loading ${filename}`);
+  const resp = await fetch(`${BASE_URL}/${filename}`);
+  if(!resp.ok) throw new Error(`HTTP ${resp.status} loading ${filename}`);
   const text = await resp.text();
   return new Promise((resolve, reject) => {
-    Papa.parse(text, {
-      header: true,
-      skipEmptyLines: true,
-      dynamicTyping: true,
-      complete: r => resolve(r.data),
-      error: e => reject(e)
-    });
+    Papa.parse(text, { header:true, skipEmptyLines:true, dynamicTyping:true,
+      complete: r => resolve(r.data), error: e => reject(e) });
   });
 }
-
-// Read a File object as text
-function readFile(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = e => resolve(e.target.result);
-    reader.onerror = () => reject(new Error('File read error'));
-    reader.readAsText(file);
-  });
-}
-
-// ── DATA PROCESSING FUNCTIONS ─────────────────────────────────────────────────
 
 function processBookedHoursDetail(rows) {
-  // Returns first 500 rows for the Booked Hours tab detail table
-  return rows.slice(0, 500).map(r => ({
-    date: r['Booked Date'] ? String(r['Booked Date']).substring(0,10) : '',
-    area: r['Areas'] || '',
-    district: r['MRC'] || '',
-    person: r['Booked Person'] || '',
-    trade: r['Trade'] || '',
-    wo: r['Booked WO'] || '',
-    wotype: r['WO Type'] || '',
-    timeclass: r['Time Classification'] || '',
-    hours: parseFloat(r['Booked Hours']) || 0,
-    start: '',
-    end: '',
-    rate: parseFloat(r['Booked Rate']) || 0,
-    cost: parseFloat(r['Booked Cost']) || 0,
-    site: r['Site Number'] || ''
+  return rows.slice(0,500).map(r => ({
+    date: String(r['Booked Date']||'').substring(0,10), area: r['Areas']||'',
+    district: r['MRC']||'', person: r['Booked Person']||'', trade: r['Trade']||'',
+    wo: r['Booked WO']||'', wotype: r['WO Type']||'', timeclass: r['Time Classification']||'',
+    hours: parseFloat(r['Booked Hours'])||0, start:'', end:'',
+    rate: parseFloat(r['Booked Rate'])||0, cost: parseFloat(r['Booked Cost'])||0, site: r['Site Number']||''
   }));
 }
-
 function processLabourTypes(rows) {
-  // Group by WO Type + OC Type, sum hours
-  const totals = {};
-  let totalHours = 0;
+  const totals={}; let total=0;
   rows.forEach(r => {
-    if(r['Is Valid for Time Analysis'] === false || r['Is Valid for Time Analysis'] === 'false') return;
-    const hrs = parseFloat(r['Booked Hours']) || 0;
-    const octype = r['OC Type'] || r['BOO_OCTYPE'] || '';
-    let label;
-    if(octype === 'X') {
-      label = 'Non Work Order Time';
-    } else {
-      label = r['WO Type'] || 'Other WO Hours';
-    }
-    totals[label] = (totals[label] || 0) + hrs;
-    totalHours += hrs;
+    if(r['Is Valid for Time Analysis']===false||r['Is Valid for Time Analysis']==='false') return;
+    const hrs=parseFloat(r['Booked Hours'])||0;
+    const label=(r['OC Type']||r['BOO_OCTYPE'])==='X'?'Non Work Order Time':(r['WO Type']||'Other WO Hours');
+    totals[label]=(totals[label]||0)+hrs; total+=hrs;
   });
-  return Object.entries(totals)
-    .sort((a,b) => b[1]-a[1])
-    .map(([type, hours]) => ({ type, hours: Math.round(hours*100)/100, pct: totalHours > 0 ? Math.round(hours/totalHours*10000)/100 : 0 }));
+  return Object.entries(totals).sort((a,b)=>b[1]-a[1])
+    .map(([type,hours])=>({type,hours:Math.round(hours*100)/100,pct:total>0?Math.round(hours/total*10000)/100:0}));
 }
-
 function processStaffMonthly(rows) {
-  const monthly = { wo: new Array(12).fill(0), admin: new Array(12).fill(0) };
+  const m={wo:new Array(12).fill(0),admin:new Array(12).fill(0)};
   rows.forEach(r => {
-    if(r['Is Valid for Time Analysis'] === false || r['Is Valid for Time Analysis'] === 'false') return;
-    const dateStr = String(r['Booked Date'] || '');
-    const month = parseInt(dateStr.substring(5,7)) - 1;
-    if(isNaN(month) || month < 0 || month > 11) return;
-    const hrs = parseFloat(r['Booked Hours']) || 0;
-    const octype = r['OC Type'] || r['BOO_OCTYPE'] || '';
-    if(octype === 'N') { monthly.wo[month] += hrs; }
-    else if(octype === 'X') { monthly.admin[month] += hrs; }
+    if(r['Is Valid for Time Analysis']===false||r['Is Valid for Time Analysis']==='false') return;
+    const month=parseInt(String(r['Booked Date']||'').substring(5,7))-1;
+    if(isNaN(month)||month<0||month>11) return;
+    const hrs=parseFloat(r['Booked Hours'])||0;
+    const oc=r['OC Type']||r['BOO_OCTYPE']||'';
+    if(oc==='N') m.wo[month]+=hrs; else if(oc==='X') m.admin[month]+=hrs;
   });
-  monthly.wo = monthly.wo.map(h => Math.round(h));
-  monthly.admin = monthly.admin.map(h => Math.round(h));
-  return monthly;
+  return {wo:m.wo.map(h=>Math.round(h)),admin:m.admin.map(h=>Math.round(h))};
 }
-
 function processStaffWO(rows) {
-  const totals = {};
+  const totals={};
   rows.forEach(r => {
-    if((r['OC Type'] || r['BOO_OCTYPE']) !== 'N') return;
-    if(r['Is Valid for Time Analysis'] === false || r['Is Valid for Time Analysis'] === 'false') return;
-    const wt = r['WO Type'] || 'Other';
-    const hrs = parseFloat(r['Booked Hours']) || 0;
-    totals[wt] = (totals[wt] || 0) + hrs;
+    if((r['OC Type']||r['BOO_OCTYPE'])!=='N') return;
+    if(r['Is Valid for Time Analysis']===false||r['Is Valid for Time Analysis']==='false') return;
+    const wt=r['WO Type']||'Other'; const hrs=parseFloat(r['Booked Hours'])||0;
+    totals[wt]=(totals[wt]||0)+hrs;
   });
-  return Object.entries(totals)
-    .sort((a,b) => b[1]-a[1])
-    .slice(0,10)
-    .map(([type, hours]) => ({ type, hours: Math.round(hours) }));
+  return Object.entries(totals).sort((a,b)=>b[1]-a[1]).slice(0,10).map(([type,hours])=>({type,hours:Math.round(hours)}));
 }
-
-function processOTByDistrict(rows, siteRows) {
-  // Overtime = hours where Is Core Hours = false and OC Type = N
-  const districtHours = {};
-  const districtCost = {};
+function processOTByDistrict(rows,siteRows) {
+  const dh={},dc={};
   rows.forEach(r => {
-    if(r['Is Core Hours'] !== false && r['Is Core Hours'] !== 'false' && r['Is Core Hours'] !== 0) return;
-    if((r['OC Type'] || r['BOO_OCTYPE']) !== 'N') return;
-    if(r['Is Valid for Time Analysis'] === false || r['Is Valid for Time Analysis'] === 'false') return;
-    const dist = r['MRC'] || '';
-    if(!dist) return;
-    const hrs = parseFloat(r['Booked Hours']) || 0;
-    const cost = parseFloat(r['Booked Cost']) || 0;
-    districtHours[dist] = (districtHours[dist] || 0) + hrs;
-    districtCost[dist] = (districtCost[dist] || 0) + cost;
+    if(r['Is Core Hours']!==false&&r['Is Core Hours']!=='false'&&r['Is Core Hours']!==0) return;
+    if((r['OC Type']||r['BOO_OCTYPE'])!=='N') return;
+    if(r['Is Valid for Time Analysis']===false||r['Is Valid for Time Analysis']==='false') return;
+    const d=r['MRC']||''; if(!d) return;
+    dh[d]=(dh[d]||0)+(parseFloat(r['Booked Hours'])||0);
+    dc[d]=(dc[d]||0)+(parseFloat(r['Booked Cost'])||0);
   });
-  // Get site counts from sites data
-  const siteCounts = {};
-  (siteRows || []).forEach(s => {
-    const d = s['District'] || '';
-    if(d) siteCounts[d] = (siteCounts[d] || 0) + 1;
-  });
-  const totalHours = Object.values(districtHours).reduce((a,b)=>a+b,0);
-  return Object.entries(districtHours)
-    .sort((a,b) => b[1]-a[1])
-    .map(([d, hours]) => ({
-      d, hours: Math.round(hours),
-      sites: siteCounts[d] || 0,
-      pct: totalHours > 0 ? Math.round(hours/totalHours*1000)/10 : 0,
-      cost: Math.round(districtCost[d] || 0)
-    }));
+  const sc={}; (siteRows||[]).forEach(s=>{const d=s['District']||'';if(d)sc[d]=(sc[d]||0)+1;});
+  const total=Object.values(dh).reduce((a,b)=>a+b,0);
+  return Object.entries(dh).sort((a,b)=>b[1]-a[1]).map(([d,hours])=>({
+    d,hours:Math.round(hours),sites:sc[d]||0,pct:total>0?Math.round(hours/total*1000)/10:0,cost:Math.round(dc[d]||0)
+  }));
 }
-
 function processResUtil(rows) {
-  // Field = WO time (OC Type N), Admin = Non-WO (OC Type X)
-  const byDistrict = {};
+  const bd={};
   rows.forEach(r => {
-    if(r['Is Valid for Time Analysis'] === false || r['Is Valid for Time Analysis'] === 'false') return;
-    const dist = r['MRC'] || '';
-    if(!dist) return;
-    if(!byDistrict[dist]) byDistrict[dist] = { field:0, admin:0 };
-    const hrs = parseFloat(r['Booked Hours']) || 0;
-    const oc = r['OC Type'] || r['BOO_OCTYPE'] || '';
-    if(oc === 'N') byDistrict[dist].field += hrs;
-    else if(oc === 'X') byDistrict[dist].admin += hrs;
+    if(r['Is Valid for Time Analysis']===false||r['Is Valid for Time Analysis']==='false') return;
+    const d=r['MRC']||''; if(!d) return;
+    if(!bd[d]) bd[d]={field:0,admin:0};
+    const hrs=parseFloat(r['Booked Hours'])||0, oc=r['OC Type']||r['BOO_OCTYPE']||'';
+    if(oc==='N') bd[d].field+=hrs; else if(oc==='X') bd[d].admin+=hrs;
   });
-  return Object.entries(byDistrict).map(([d, v]) => {
-    const total = v.field + v.admin || 1;
-    return {
-      d,
-      field: Math.round(v.field/total*100),
-      admin: Math.round(v.admin/total*100),
-      other: Math.max(0, 100 - Math.round(v.field/total*100) - Math.round(v.admin/total*100))
-    };
+  return Object.entries(bd).map(([d,v])=>{
+    const t=v.field+v.admin||1;
+    return {d,field:Math.round(v.field/t*100),admin:Math.round(v.admin/t*100),other:Math.max(0,100-Math.round(v.field/t*100)-Math.round(v.admin/t*100))};
   });
 }
-
 function processSiteMatrix(rows) {
-  const matrix = {};
-  rows.forEach(r => {
-    const d = r['District'] || '';
-    const c = r['Class'] || 'N';
-    if(!d) return;
-    if(!matrix[d]) matrix[d] = {d, A:0, Ap:0, B:0, C:0, D:0, E:0, F:0, N1:0, R:0};
-    const key = c === "A'" ? 'Ap' : (c === 'N1' ? 'N1' : c);
-    if(matrix[d][key] !== undefined) matrix[d][key]++;
+  const m={};
+  rows.forEach(r=>{
+    const d=r['District']||'',c=r['Class']||'N'; if(!d) return;
+    if(!m[d]) m[d]={d,A:0,Ap:0,B:0,C:0,D:0,E:0,F:0,N1:0,R:0};
+    const key=c==="A'"?'Ap':(c==='N1'?'N1':c);
+    if(m[d][key]!==undefined) m[d][key]++;
   });
-  return Object.values(matrix);
+  return Object.values(m);
 }
-
-function processTechCap(personnelRows, siteRows) {
-  const staffByDistrict = {};
-  (personnelRows || []).forEach(r => {
-    const trade = r['Trade'] || '';
-    const mrc = r['MRC'] || '';
-    if(!mrc) return;
-    if(trade.includes('TECHNICIAN') || trade.includes('TEAM LEAD') || trade.includes('APPRENTICE')) {
-      staffByDistrict[mrc] = (staffByDistrict[mrc] || 0) + 1;
-    }
-  });
-  const sitesByDistrict = {};
-  (siteRows || []).forEach(s => {
-    const d = s['District'] || '';
-    if(d) sitesByDistrict[d] = (sitesByDistrict[d] || 0) + 1;
-  });
-  return DISTRICTS.map(d => ({
-    d,
-    techs: staffByDistrict[d] || 0,
-    sites: sitesByDistrict[d] || 0,
-    util: 0, // utilisation requires complex calculation — shown as 0 until enhanced
-    class: 'A'
-  }));
+function processTechCap(personnelRows,siteRows) {
+  const sd={},sb={};
+  (personnelRows||[]).forEach(r=>{const t=r['Trade']||'',m=r['MRC']||'';if(!m) return;if(t.includes('TECHNICIAN')||t.includes('TEAM LEAD')||t.includes('APPRENTICE'))sd[m]=(sd[m]||0)+1;});
+  (siteRows||[]).forEach(s=>{const d=s['District']||'';if(d)sb[d]=(sb[d]||0)+1;});
+  return DISTRICTS.map(d=>({d,techs:sd[d]||0,sites:sb[d]||0,util:0,class:'A'}));
 }
-
 function processAdminMatrix(rows) {
-  return rows.map(r => {
-    const area = (r['Primary Area'] || '').toLowerCase();
-    return {
-      name: r['Admin Name'] || '',
-      east: area === 'east' ? 1 : 0,
-      north: area === 'north' ? 1 : 0,
-      south: area === 'south' ? 1 : 0,
-      west: area === 'west' ? 1 : 0,
-      other: (!['east','north','south','west'].includes(area)) ? 1 : 0
-    };
-  });
+  return rows.map(r=>{const a=(r['Primary Area']||'').toLowerCase();return{name:r['Admin Name']||'',east:a==='east'?1:0,north:a==='north'?1:0,south:a==='south'?1:0,west:a==='west'?1:0,other:!['east','north','south','west'].includes(a)?1:0};});
 }
-
 function processInvoiceData(rows) {
-  const counts = {};
-  rows.forEach(r => {
-    const dist = r['MRC'] || r['District'] || '';
-    if(!dist) return;
-    counts[dist] = (counts[dist] || 0) + 1;
-  });
-  return Object.entries(counts)
-    .sort((a,b) => b[1]-a[1])
-    .map(([d, count]) => ({d, count}));
+  const c={};
+  rows.forEach(r=>{const d=r['MRC']||r['District']||'';if(d)c[d]=(c[d]||0)+1;});
+  return Object.entries(c).sort((a,b)=>b[1]-a[1]).map(([d,count])=>({d,count}));
 }
-
 function processInvoiceDetail(rows) {
-  return rows.slice(0, 200).map(r => ({
-    date: String(r['Activity Date'] || '').substring(0,10),
-    district: r['MRC'] || '',
-    cc: '',
-    gl: '',
-    wo: r['Work Order'] || '',
-    person: r['Supplier'] || '',
-    inv: r['Order'] || '',
-    cost: parseFloat(r['Actual Cost']) || 0,
-    site: ''
-  }));
+  return rows.slice(0,200).map(r=>({date:String(r['Activity Date']||'').substring(0,10),district:r['MRC']||'',cc:'',gl:'',wo:r['Work Order']||'',person:r['Supplier']||'',inv:r['Order']||'',cost:parseFloat(r['Actual Cost'])||0,site:''}));
 }
 
-// ── MAIN DATA LOAD FUNCTION ───────────────────────────────────────────────────
-// ── MAIN DATA LOAD FUNCTION ───────────────────────────────────────────────────
 async function loadData() {
-  showLoader('Loading data...', 'Fetching CSV files from GitHub...');
+  showLoader('Loading data...','Fetching CSV files...');
   setLoaderProgress(5);
-
-  let bhRows=[], actRows=[], eventRows=[], ppmRows=[], siteRows=[], personnelRows=[], adminRows=[];
-
-  const steps = [
-    { file:'bookedhours_detail.csv', label:'Booked Hours',  assign: d => bhRows=d },
-    { file:'activities_detail.csv',  label:'Activities',    assign: d => actRows=d },
-    { file:'events.csv',             label:'Events',        assign: d => eventRows=d },
-    { file:'ppm_live.csv',           label:'PPM Schedule',  assign: d => ppmRows=d },
-    { file:'sites.csv',              label:'Sites',         assign: d => siteRows=d },
-    { file:'personnel.csv',          label:'Personnel',     assign: d => personnelRows=d },
-    { file:'admin_assignment.csv',   label:'Admin',         assign: d => adminRows=d },
+  let bhRows=[],actRows=[],siteRows=[],personnelRows=[],adminRows=[];
+  const steps=[
+    {file:'bookedhours_detail.csv',label:'Booked Hours',assign:d=>bhRows=d},
+    {file:'activities_detail.csv',label:'Activities',assign:d=>actRows=d},
+    {file:'events.csv',label:'Events',assign:d=>{}},
+    {file:'ppm_live.csv',label:'PPM Schedule',assign:d=>{}},
+    {file:'sites.csv',label:'Sites',assign:d=>siteRows=d},
+    {file:'personnel.csv',label:'Personnel',assign:d=>personnelRows=d},
+    {file:'admin_assignment.csv',label:'Admin',assign:d=>adminRows=d},
   ];
-
-  for(let i=0; i<steps.length; i++) {
-    const s = steps[i];
-    setLoaderProgress(10 + (i/steps.length)*75, `Loading ${s.label}...`);
-    try {
-      const data = await fetchCSV(s.file);
-      s.assign(data);
-    } catch(e) {
-      console.warn(`Failed to load ${s.file}:`, e);
-    }
+  for(let i=0;i<steps.length;i++){
+    const s=steps[i]; setLoaderProgress(10+(i/steps.length)*75,`Loading ${s.label}...`);
+    try{const data=await fetchCSV(s.file);s.assign(data);}catch(e){console.warn(`Failed: ${s.file}`,e);}
   }
-
-  setLoaderProgress(90, 'Processing data...');
-
-  if(bhRows.length > 0) {
-    bookedHoursDetail.length = 0;
-    processBookedHoursDetail(bhRows).forEach(r => bookedHoursDetail.push(r));
-    const lt = processLabourTypes(bhRows);
-    if(lt.length > 0) { labourTypes.length = 0; lt.forEach(r => labourTypes.push(r)); }
-    const sm = processStaffMonthly(bhRows);
-    staffMonthly.wo = sm.wo; staffMonthly.admin = sm.admin;
-    const sw = processStaffWO(bhRows);
-    if(sw.length > 0) { staffWO.length = 0; sw.forEach(r => staffWO.push(r)); }
-    const ot = processOTByDistrict(bhRows, siteRows);
-    if(ot.length > 0) { otData.byDistrict.length = 0; ot.forEach(r => otData.byDistrict.push(r)); }
-    const ru = processResUtil(bhRows);
-    if(ru.length > 0) { resUtilData.length = 0; ru.forEach(r => resUtilData.push(r)); }
+  setLoaderProgress(90,'Processing...');
+  if(bhRows.length>0){
+    bookedHoursDetail.length=0; processBookedHoursDetail(bhRows).forEach(r=>bookedHoursDetail.push(r));
+    const lt=processLabourTypes(bhRows); if(lt.length>0){labourTypes.length=0;lt.forEach(r=>labourTypes.push(r));}
+    const sm=processStaffMonthly(bhRows); staffMonthly.wo=sm.wo; staffMonthly.admin=sm.admin;
+    const sw=processStaffWO(bhRows); if(sw.length>0){staffWO.length=0;sw.forEach(r=>staffWO.push(r));}
+    const ot=processOTByDistrict(bhRows,siteRows); if(ot.length>0){otData.byDistrict.length=0;ot.forEach(r=>otData.byDistrict.push(r));}
+    const ru=processResUtil(bhRows); if(ru.length>0){resUtilData.length=0;ru.forEach(r=>resUtilData.push(r));}
   }
-  if(siteRows.length > 0) {
-    const sm2 = processSiteMatrix(siteRows);
-    if(sm2.length > 0) { siteMatrix.length = 0; sm2.forEach(r => siteMatrix.push(r)); }
+  if(siteRows.length>0){const sm2=processSiteMatrix(siteRows);if(sm2.length>0){siteMatrix.length=0;sm2.forEach(r=>siteMatrix.push(r));}}
+  if(personnelRows.length>0||siteRows.length>0){const tc=processTechCap(personnelRows,siteRows);if(tc.length>0){techCapData.length=0;tc.forEach(r=>techCapData.push(r));}}
+  if(adminRows.length>0){const am=processAdminMatrix(adminRows);if(am.length>0){adminMatrix.length=0;am.forEach(r=>adminMatrix.push(r));}}
+  if(actRows.length>0){
+    const id=processInvoiceData(actRows);if(id.length>0){invoiceData.length=0;id.forEach(r=>invoiceData.push(r));}
+    const idet=processInvoiceDetail(actRows);if(idet.length>0){invoiceDetail.length=0;idet.forEach(r=>invoiceDetail.push(r));}
   }
-  if(personnelRows.length > 0 || siteRows.length > 0) {
-    const tc = processTechCap(personnelRows, siteRows);
-    if(tc.length > 0) { techCapData.length = 0; tc.forEach(r => techCapData.push(r)); }
-  }
-  if(adminRows.length > 0) {
-    const am = processAdminMatrix(adminRows);
-    if(am.length > 0) { adminMatrix.length = 0; am.forEach(r => adminMatrix.push(r)); }
-  }
-  if(actRows.length > 0) {
-    const id = processInvoiceData(actRows);
-    if(id.length > 0) { invoiceData.length = 0; id.forEach(r => invoiceData.push(r)); }
-    const idet = processInvoiceDetail(actRows);
-    if(idet.length > 0) { invoiceDetail.length = 0; idet.forEach(r => invoiceDetail.push(r)); }
-  }
-
-  setLoaderProgress(100, 'Ready.');
-  const sub = document.querySelector('.hdr-sub');
-  if(sub) {
-    if(bhRows.length > 0) {
-      sub.textContent = `Service Assurance  |  National Operations Team  |  Live Data — ${new Date().toLocaleDateString('en-AU')}`;
-    } else {
-      sub.textContent = `Service Assurance  |  National Operations Team  |  Sample Data (data unavailable)`;
-    }
-  }
+  setLoaderProgress(100,'Ready.');
+  const sub=document.querySelector('.hdr-sub');
+  if(sub) sub.textContent=bhRows.length>0?`Service Assurance  |  National Operations Team  |  Live Data — ${new Date().toLocaleDateString('en-AU')}`:`Service Assurance  |  National Operations Team  |  Sample Data`;
   console.log(`Loaded: ${bhRows.length} booked hours, ${actRows.length} activities, ${siteRows.length} sites`);
-}
-
-  setLoaderProgress(90, 'Processing data...');
-
-  // Replace sample data with live data where available
-  if(bhRows.length > 0) {
-    bookedHoursDetail.length = 0;
-    processBookedHoursDetail(bhRows).forEach(r => bookedHoursDetail.push(r));
-
-    const lt = processLabourTypes(bhRows);
-    if(lt.length > 0) { labourTypes.length = 0; lt.forEach(r => labourTypes.push(r)); }
-
-    const sm = processStaffMonthly(bhRows);
-    staffMonthly.wo = sm.wo;
-    staffMonthly.admin = sm.admin;
-
-    const sw = processStaffWO(bhRows);
-    if(sw.length > 0) { staffWO.length = 0; sw.forEach(r => staffWO.push(r)); }
-
-    const ot = processOTByDistrict(bhRows, siteRows);
-    if(ot.length > 0) { otData.byDistrict.length = 0; ot.forEach(r => otData.byDistrict.push(r)); }
-
-    const ru = processResUtil(bhRows);
-    if(ru.length > 0) { resUtilData.length = 0; ru.forEach(r => resUtilData.push(r)); }
-  }
-
-  if(siteRows.length > 0) {
-    const sm2 = processSiteMatrix(siteRows);
-    if(sm2.length > 0) { siteMatrix.length = 0; sm2.forEach(r => siteMatrix.push(r)); }
-  }
-
-  if(personnelRows.length > 0 || siteRows.length > 0) {
-    const tc = processTechCap(personnelRows, siteRows);
-    if(tc.length > 0) { techCapData.length = 0; tc.forEach(r => techCapData.push(r)); }
-  }
-
-  if(adminRows.length > 0) {
-    const am = processAdminMatrix(adminRows);
-    if(am.length > 0) { adminMatrix.length = 0; am.forEach(r => adminMatrix.push(r)); }
-  }
-
-  if(actRows.length > 0) {
-    const id = processInvoiceData(actRows);
-    if(id.length > 0) { invoiceData.length = 0; id.forEach(r => invoiceData.push(r)); }
-
-    const idet = processInvoiceDetail(actRows);
-    if(idet.length > 0) { invoiceDetail.length = 0; idet.forEach(r => invoiceDetail.push(r)); }
-  }
-
-  setLoaderProgress(100, 'Ready.');
-  console.log(`Loaded: ${bhRows.length} booked hours, ${actRows.length} activities, ${siteRows.length} sites`);
-
-  // Update header
-  const sub = document.querySelector('.hdr-sub');
-  if(sub) {
-    if(bhRows.length > 0) {
-      sub.textContent = `Service Assurance  |  National Operations Team  |  Live Data — ${new Date().toLocaleDateString('en-AU')}`;
-    } else {
-      sub.textContent = `Service Assurance  |  National Operations Team  |  Sample Data (SharePoint unavailable)`;
-    }
-  }
 }
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const DISTRICTS = ['Adelaide','Canberra','Darwin','Newcastle','NorthQld','Perth','SouthQld','Sydney','Tasmania','Victoria'];
@@ -1701,11 +1474,7 @@ function addTyping() {
 
 // ── INIT ON LOAD ──────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async ()=>{
-  try {
-    await loadData();
-  } catch(e) {
-    console.warn('Data load failed, using sample data:', e);
-  }
+  try { await loadData(); } catch(e) { console.warn('Data load failed:', e); }
   hideLoader();
   initPMPerf();
 });
